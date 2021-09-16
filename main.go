@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"sync"
 )
@@ -8,10 +9,11 @@ import (
 var wg sync.WaitGroup
 
 func main() {
+	ctx, cancel := context.WithCancel(context.Background())
 	queue := make(chan string)
 	for i := 0; i < 2; i++ {
 		wg.Add(1)
-		go fetchURL(queue)
+		go fetchURL(ctx, queue)
 	}
 
 	queue <- "https://www.example.com"
@@ -19,19 +21,19 @@ func main() {
 	queue <- "https://www.example.net/foo"
 	queue <- "https://www.example.net/bar"
 
-	close(queue)
+	cancel()
 	wg.Wait()
 }
 
-func fetchURL(queue chan string) {
+func fetchURL(ctx context.Context, queue chan string) {
 	for {
-		url, more := <-queue
-		if more {
-			fmt.Println("fetching", url)
-		} else {
+		select {
+		case <-ctx.Done():
 			fmt.Println("worker exit")
 			wg.Done()
 			return
+		case url := <-queue:
+			fmt.Println("fetching", url)
 		}
 	}
 }

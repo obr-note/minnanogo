@@ -1,42 +1,38 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
-
-	"github.com/mitchellh/cli"
+	"strings"
+	"testing"
 )
 
-type AddCommand struct{}
+const Version = "1.0.0"
 
-func (c *AddCommand) Synopsis() string {
-	return "Add todo task to list"
+func main() {
+	cli := &CLI{outStream: os.Stdout, errStream: os.Stderr}
+	os.Exit(cli.Run(os.Args))
 }
 
-func (c *AddCommand) Help() string {
-	return "Usage: todo add [option]"
+type CLI struct {
+	outStream, errStream io.Writer
 }
 
-func (c *AddCommand) Run(args []string) int {
-	fmt.Println("あざます")
+func (c *CLI) Run(args []string) int {
+	fmt.Fprintf(c.errStream, "gobook version %s \n", Version)
 	return 0
 }
 
-func main() {
-	c := cli.NewCLI("todo", "0.1.0")
+func TestRun(t *testing.T) {
+	outStream, errStream := new(bytes.Buffer), new(bytes.Buffer)
+	cli := &CLI{outStream: outStream, errStream: errStream}
+	args := strings.Split("gobook -version", " ")
 
-	c.Args = os.Args[1:]
-
-	c.Commands = map[string]cli.CommandFactory{
-		"add": func() (cli.Command, error) {
-			return &AddCommand{}, nil
-		},
+	cli.Run(args)
+	expected := fmt.Sprintf("gobook version %s", Version)
+	if !strings.Contains(outStream.String(), expected) {
+		t.Errorf("expected %q to eq %q", outStream.String(), expected)
 	}
-
-	exitCode, err := c.Run()
-	if err != nil {
-		fmt.Printf("Failed to execute: %s¥n", err.Error())
-	}
-
-	os.Exit(exitCode)
 }

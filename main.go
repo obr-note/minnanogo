@@ -1,51 +1,97 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"os"
+	"os/signal"
+	"reflect"
+	"syscall"
 )
 
 func main() {
-	os.Exit(Run())
+	if err := _main(); err != nil {
+		fmt.Printf("%s\n", err)
+		os.Exit(1)
+	}
 }
 
-func Run() int {
-	files := []string{"./test0", "./test1", "./test2"}
-
-	ch1 := make(chan []byte, 3)
-	ch2 := make(chan []byte, 3)
-	ch3 := make(chan []byte, 3)
-	chs := []chan []byte{ch1, ch2, ch3}
-	// chs := make([]chan []byte, 3)
-
-	fc := func(i int, f *os.File) {
-		defer close(chs[i])
-		buf := make([]byte, 4096)
-		for io := 0; io < 3; io++ {
-			n, err := f.Read(buf)
-			if err != nil {
-				return
-			}
-			chs[i] <- buf[:n]
-		}
+func _main() error {
+	if len(os.Args) < 2 {
+		return errors.New("prog [file1 file2 ...]")
 	}
 
-	for i, file := range files {
-		f, err := os.Open(file)
-		if err != nil {
-			return 1
-		}
-		defer f.Close()
-		go fc(i, f)
+	sigch := make(chan os.Signal, 1)
+	signal.Notify(sigch, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
+
+	cs, err := makeChannelFiles(os.Args[1:]...)
+	if err != nil {
+		return err
 	}
 
-	var data []byte
+	cases, err := makeSelectCases(cs...)
+	if err != nil {
+		return err
+	}
+
+	go doSelect(cases)
+
+	select {
+	case <-sigch:
+		return nil
+	}
+
+	return nil
+}
+
+func readFromFile(ch chan []byte, f *os.File) {
+	defer close(ch)
+	defer f.Close()
+	buf := make([]byte, 4096)
 	for {
-		select {
-		case data = <-chs[0]:
-		case data = <-chs[1]:
-		case data = <-chs[2]:
+		if n, err := f.Read(buf); err == nil {
+			ch <- buf[:n]
+		}
+	}
+}
+
+func makeChannelFiles(files ...string) ([]reflect.Value, error) {
+	cs := make([]reflect.Value, len(files))
+
+	for i, fn := range files {
+		ch := make(chan []byte)
+
+		f, err := os.Open(fn)
+		if err != nil {
+			return nil, err
+		}
+		go readFromFile(ch, f)
+
+		cs[i] = reflect.ValueOf(ch)
+	}
+	return cs, nil
+}
+
+func makeSelectCases(cs ...reflect.Value) ([]reflect.SelectCase, error) {
+	cases := make([]reflect.SelectCase, len(cs))
+	for i, ch := range cs {
+		if ch.Kind() != reflect.Chan {
+			return nil, errors.New("argument must be channel")
 		}
 
-		os.Stdout.Write(data)
+		cases[i] = reflect.SelectCase{
+			Chan: ch,
+			Dir:  reflect.SelectRecv,
+		}
+	}
+
+	return cases, nil
+}
+
+func doSelect(cases []reflect.SelectCase) {
+	for {
+		if chosen, recv, ok := reflect.Select(cases); ok {
+			fmt.Printf("\n=== %s ===\n%s", os.Args[chosen+1], recv.Interface())
+		}
 	}
 }

@@ -1,23 +1,18 @@
 package main
 
 import (
-	"fmt"
+	"database/sql"
 	"log"
-	"net/http"
+	"os"
+
+	_ "github.com/lib/pq"
 )
 
-func Route() *http.ServeMux {
-	m := http.NewServeMux()
-	m.HandleFunc("/greet", func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-		}
-		fmt.Fprintf(w, "Hello, %s", r.FormValue("name"))
-	})
-	return m
-}
-
 func main() {
-	m := Route()
-	log.Fatal(http.ListenAndServe(":8080", m))
+	dsn := os.Getenv("DSN")
+	db, err := sql.Open("postgress", dsn)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
 }
